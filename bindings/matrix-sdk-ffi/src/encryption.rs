@@ -1260,3 +1260,45 @@ impl OAuthCrossSigningResetInfo {
         AuthData::OAuth { session: self.session.clone() }
     }
 }
+
+// ---------------------------------------------------------------------------
+// TADIXS fork: per-device trust.
+//
+// Wraps `Encryption::get_user_devices`, which matrix-sdk has and these
+// bindings don't offer. Kept in a fork because the upstream project does not
+// take AI-written contributions; see TADIXS's docs/upstream for the notes.
+// ---------------------------------------------------------------------------
+
+/// How far one of a user's devices is trusted.
+#[derive(uniffi::Record)]
+pub struct DeviceTrust {
+    /// The device's ID.
+    pub device_id: String,
+    /// The name the device was given, if any.
+    pub display_name: Option<String>,
+    /// Whether this device considers it verified: signed by its owner's
+    /// identity which is itself verified, or verified by hand.
+    pub is_verified: bool,
+    /// Whether its owner signed it with their cross-signing identity,
+    /// whatever this device thinks of that identity.
+    pub is_cross_signed_by_owner: bool,
+}
+
+#[matrix_sdk_ffi_macros::export]
+impl Encryption {
+    /// The trust state of every device of `user_id` this device knows of,
+    /// from the local crypto store. Empty when nothing is known yet.
+    pub async fn user_device_trust(&self, user_id: String) -> Result<Vec<DeviceTrust>, ClientError> {
+        let user_id: OwnedUserId = user_id.as_str().try_into()?;
+        let devices = self.inner.get_user_devices(&user_id).await?;
+        Ok(devices
+            .devices()
+            .map(|device| DeviceTrust {
+                device_id: device.device_id().to_string(),
+                display_name: device.display_name().map(ToOwned::to_owned),
+                is_verified: device.is_verified(),
+                is_cross_signed_by_owner: device.is_cross_signed_by_owner(),
+            })
+            .collect())
+    }
+}
